@@ -3,168 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobil Araba Oyunu</title>
+    <title>Furkan Game - BMW Pro</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #222;
-            overflow: hidden;
-            font-family: sans-serif;
-            touch-action: none; /* Sayfanın kaymasını engeller */
+        body { margin: 0; padding: 0; background: #111; overflow: hidden; font-family: 'Arial Black', sans-serif; touch-action: none; }
+        #header {
+            position: absolute; top: 0; width: 100%; padding: 15px;
+            display: flex; justify-content: space-between; align-items: center;
+            box-sizing: border-box; z-index: 100; color: white;
         }
-        canvas {
-            display: block;
-            background: #444;
-        }
-        #ui {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            color: white;
-            font-size: 20px;
-            font-weight: bold;
-            pointer-events: none;
-        }
-        /* Dokunmatik Alan Bilgisi */
-        .touch-info {
-            position: absolute;
-            bottom: 20px;
-            width: 100%;
-            text-align: center;
-            color: rgba(255,255,255,0.5);
-            font-size: 14px;
-            pointer-events: none;
-        }
+        #logo { font-size: 20px; color: #0066ff; text-shadow: 2px 2px #000; }
+        #fuel-wrap { width: 100px; height: 15px; background: #444; border: 2px solid #fff; border-radius: 10px; overflow: hidden; }
+        #fuel-bar { width: 100%; height: 100%; background: #00ff00; transition: width 0.1s; }
+        #pause-btn { background: rgba(255,255,255,0.2); border: 1px solid #fff; color: white; padding: 5px 15px; border-radius: 5px; cursor: pointer; }
+        #nitro-msg { position: absolute; top: 70px; width: 100%; text-align: center; color: cyan; font-size: 24px; display: none; text-shadow: 0 0 10px blue; }
     </style>
 </head>
 <body>
 
-    <div id="ui">Puan: 0</div>
-    <div class="touch-info">Sola/Sağa gitmek için ekranın yanlarına dokun</div>
+    <div id="header">
+        <div id="logo">FURKAN GAME</div>
+        <div id="fuel-wrap"><div id="fuel-bar"></div></div>
+        <div id="score">SKOR: 0</div>
+        <button id="pause-btn" onclick="togglePause()">PAUSE</button>
+    </div>
+    <div id="nitro-msg">NİTRO AKTİF! 🏎️💨</div>
     <canvas id="gameCanvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
-        const ui = document.getElementById("ui");
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const fuelBar = document.getElementById("fuel-bar");
+const nitroMsg = document.getElementById("nitro-msg");
 
-        // Ekranı telefon boyutuna göre ayarla
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-        let score = 0;
-        let gameActive = true;
-        let speed = 6;
-        let moveDir = 0; // -1: Sol, 1: Sağ, 0: Dur
+// --- SES EFEKTLERİ ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(freq, type, duration) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+}
 
-        const player = {
-            x: canvas.width / 2 - 25,
-            y: canvas.height - 120,
-            width: 40,
-            height: 70,
-            color: "#ff3333"
-        };
+let score = 0, gameActive = true, isPaused = false;
+let speed = 7, baseSpeed = 7, fuel = 100;
+let lastTap = 0, isNitro = false;
 
-        const obstacles = [];
+const player = { x: canvas.width/2 - 22, y: canvas.height - 150, w: 45, h: 85 };
+const obstacles = [], decorations = [], fuels = [];
 
-        // MOBİL DOKUNMATİK KONTROLLER
-        window.addEventListener("touchstart", (e) => {
-            const touchX = e.touches[0].clientX;
-            if (touchX < canvas.width / 2) {
-                moveDir = -1; // Ekranın soluna dokunuldu
-            } else {
-                moveDir = 1; // Ekranın sağına dokunuldu
-            }
+function togglePause() {
+    isPaused = !isPaused;
+    document.getElementById("pause-btn").innerText = isPaused ? "DEVAM" : "PAUSE";
+    if(!isPaused) update();
+}
+
+// Dokunmatik Kontroller & Nitro
+canvas.addEventListener("touchstart", (e) => {
+    if (isPaused) return;
+    const now = Date.now();
+    if (now - lastTap < 300) { // Çift tıklama
+        isNitro = true; speed = baseSpeed * 2.5;
+        nitroMsg.style.display = "block";
+        playSound(400, 'sawtooth', 0.5);
+        setTimeout(() => { isNitro = false; speed = baseSpeed; nitroMsg.style.display = "none"; }, 2000);
+    }
+    lastTap = now;
+    moveDir = e.touches[0].clientX < canvas.width / 2 ? -1 : 1;
+});
+canvas.addEventListener("touchend", () => moveDir = 0);
+let moveDir = 0;
+
+function createObjects() {
+    if (Math.random() < 0.05) { // Evler
+        const side = Math.random() < 0.5 ? -1 : 1;
+        decorations.push({
+            x: side === -1 ? 0 : canvas.width - 80,
+            y: -200, w: 80, h: 120, windows: Math.floor(Math.random()*4)+2
         });
+    }
+    if (Math.random() < 0.02) { // Arabalar
+        obstacles.push({ x: (Math.floor(Math.random()*4)*(canvas.width/4))+10, y: -100, w: 45, h: 85, color: 'black' });
+    }
+    if (Math.random() < 0.01) { // Yakıt
+        fuels.push({ x: (Math.floor(Math.random()*4)*(canvas.width/4))+20, y: -50, w: 30, h: 30 });
+    }
+}
 
-        window.addEventListener("touchend", () => {
-            moveDir = 0; // Dokunma bırakılınca dur
-        });
+function update() {
+    if (!gameActive || isPaused) return;
 
-        // Bilgisayar testi için klavye desteği kalsın
-        window.addEventListener("keydown", (e) => {
-            if (e.key === "ArrowLeft") moveDir = -1;
-            if (e.key === "ArrowRight") moveDir = 1;
-        });
-        window.addEventListener("keyup", () => moveDir = 0);
+    fuel -= 0.1;
+    fuelBar.style.width = fuel + "%";
+    if (fuel <= 0) { gameActive = false; alert("YAKIT BİTTİ!"); location.reload(); }
 
-        function createObstacle() {
-            if (Math.random() < 0.03) {
-                const w = 40;
-                const x = Math.random() * (canvas.width - w);
-                obstacles.push({ x: x, y: -100, width: w, height: 70, color: "#33ccff" });
-            }
+    if (moveDir === -1 && player.x > 5) player.x -= 8;
+    if (moveDir === 1 && player.x < canvas.width - 50) player.x += 8;
+
+    [obstacles, decorations, fuels].forEach(list => {
+        for (let i = list.length-1; i >= 0; i--) {
+            list[i].y += speed;
+            if (list[i].y > canvas.height) list.splice(i, 1);
         }
+    });
 
-        function update() {
-            if (!gameActive) return;
-
-            // Araba Hareketi
-            if (moveDir === -1 && player.x > 0) player.x -= 8;
-            if (moveDir === 1 && player.x < canvas.width - player.width) player.x += 8;
-
-            for (let i = 0; i < obstacles.length; i++) {
-                obstacles[i].y += speed;
-
-                // Çarpışma Kontrolü
-                if (
-                    player.x < obstacles[i].x + obstacles[i].width &&
-                    player.x + player.width > obstacles[i].x &&
-                    player.y < obstacles[i].y + obstacles[i].height &&
-                    player.y + player.height > obstacles[i].y
-                ) {
-                    gameActive = false;
-                    if(confirm("Kaza Yaptın! Skor: " + score + "\nTekrar oynamak ister misin?")) {
-                        location.reload();
-                    }
-                }
-
-                if (obstacles[i].y > canvas.height) {
-                    obstacles.splice(i, 1);
-                    score++;
-                    ui.innerText = "Puan: " + score;
-                    if (score % 5 === 0) speed += 0.3;
-                }
-            }
-
-            createObstacle();
-            draw();
-            requestAnimationFrame(update);
+    // Çarpışma ve Yakıt Toplama
+    obstacles.forEach(o => {
+        if (player.x < o.x + o.w && player.x + player.w > o.x && player.y < o.y + o.h && player.y + player.h > o.y) {
+            playSound(100, 'square', 0.5); gameActive = false; alert("KAZA!"); location.reload();
         }
-
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Yol Çizgileri
-            ctx.setLineDash([30, 30]);
-            ctx.strokeStyle = "rgba(255,255,255,0.3)";
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(canvas.width / 2, 0);
-            ctx.lineTo(canvas.width / 2, canvas.height);
-            ctx.stroke();
-
-            // Oyuncu (Araba tasarımı)
-            ctx.fillStyle = player.color;
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = "red";
-            ctx.fillRect(player.x, player.y, player.width, player.height);
-            
-            // Farlar
-            ctx.fillStyle = "yellow";
-            ctx.fillRect(player.x + 5, player.y - 5, 10, 5);
-            ctx.fillRect(player.x + player.width - 15, player.y - 5, 10, 5);
-
-            // Engeller
-            ctx.shadowBlur = 0;
-            for (let obs of obstacles) {
-                ctx.fillStyle = obs.color;
-                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-            }
+    });
+    fuels.forEach((f, i) => {
+        if (player.x < f.x + f.w && player.x + player.w > f.x && player.y < f.y + f.h && player.y + player.h > f.y) {
+            fuel = Math.min(100, fuel + 30); fuels.splice(i, 1); playSound(800, 'sine', 0.1);
         }
+    });
 
-        update();
-    </script>
+    score++;
+    document.getElementById("score").innerText = "SKOR: " + Math.floor(score/10);
+    createObjects();
+    draw();
+    requestAnimationFrame(update);
+}
+
+function draw() {
+    ctx.fillStyle = "#222"; ctx.fillRect(0, 0, canvas.width, canvas.height); // Asfalt
+    
+    // Yol Çizgileri
+    ctx.strokeStyle = "white"; ctx.setLineDash([40, 40]);
+    for(let i=1; i<4; i++) {
+        ctx.beginPath(); ctx.moveTo(i*(canvas.width/4), 0); ctx.lineTo(i*(canvas.width/4), canvas.height); ctx.stroke();
+    }
+
+    // Evler (Detaylı)
+    decorations.forEach(d => {
+        ctx.fillStyle = "#555"; ctx.fillRect(d.x, d.y, d.w, d.h); // Bina
+        ctx.fillStyle = "yellow"; // Pencereler
+        for(let j=0; j<d.windows; j++) ctx.fillRect(d.x+10, d.y+15+(j*25), 20, 15);
+        ctx.fillStyle = "#333"; ctx.fillRect(d.x, d.y+d.h-5, d.w, 5); // Gölge
+    });
+
+    // Yakıt Kutuları
+    fuels.forEach(f => {
+        ctx.fillStyle = "#00ff00"; ctx.fillRect(f.x, f.y, f.w, f.h);
+        ctx.fillStyle = "white"; ctx.font = "15px Arial"; ctx.fillText("GAS", f.x+2, f.y+20);
+    });
+
+    // Oyuncu BMW
+    ctx.fillStyle = "#0066ff"; ctx.beginPath(); ctx.roundRect(player.x, player.y, player.w, player.h, 8); ctx.fill();
+    ctx.fillStyle = "cyan"; ctx.fillRect(player.x+5, player.y+15, 35, 20); // Ön cam
+    if(isNitro) { // Nitro alevi
+        ctx.fillStyle = "orange"; ctx.fillRect(player.x+10, player.y+player.h, 25, 20);
+    }
+
+    // Trafik
+    obstacles.forEach(o => {
+        ctx.fillStyle = "#333"; ctx.beginPath(); ctx.roundRect(o.x, o.y, o.w, o.h, 8); ctx.fill();
+        ctx.fillStyle = "red"; ctx.fillRect(o.x+5, o.y+75, 10, 5); ctx.fillRect(o.x+30, o.y+75, 10, 5);
+    });
+}
+
+update();
+</script>
 </body>
 </html>
