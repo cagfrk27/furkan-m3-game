@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobil Araba Oyunu</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #222;
+            overflow: hidden;
+            font-family: sans-serif;
+            touch-action: none; /* Sayfanın kaymasını engeller */
+        }
+        canvas {
+            display: block;
+            background: #444;
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        /* Dokunmatik Alan Bilgisi */
+        .touch-info {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.5);
+            font-size: 14px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">Puan: 0</div>
+    <div class="touch-info">Sola/Sağa gitmek için ekranın yanlarına dokun</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const ui = document.getElementById("ui");
+
+        // Ekranı telefon boyutuna göre ayarla
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let score = 0;
+        let gameActive = true;
+        let speed = 6;
+        let moveDir = 0; // -1: Sol, 1: Sağ, 0: Dur
+
+        const player = {
+            x: canvas.width / 2 - 25,
+            y: canvas.height - 120,
+            width: 40,
+            height: 70,
+            color: "#ff3333"
+        };
+
+        const obstacles = [];
+
+        // MOBİL DOKUNMATİK KONTROLLER
+        window.addEventListener("touchstart", (e) => {
+            const touchX = e.touches[0].clientX;
+            if (touchX < canvas.width / 2) {
+                moveDir = -1; // Ekranın soluna dokunuldu
+            } else {
+                moveDir = 1; // Ekranın sağına dokunuldu
+            }
+        });
+
+        window.addEventListener("touchend", () => {
+            moveDir = 0; // Dokunma bırakılınca dur
+        });
+
+        // Bilgisayar testi için klavye desteği kalsın
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowLeft") moveDir = -1;
+            if (e.key === "ArrowRight") moveDir = 1;
+        });
+        window.addEventListener("keyup", () => moveDir = 0);
+
+        function createObstacle() {
+            if (Math.random() < 0.03) {
+                const w = 40;
+                const x = Math.random() * (canvas.width - w);
+                obstacles.push({ x: x, y: -100, width: w, height: 70, color: "#33ccff" });
+            }
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Araba Hareketi
+            if (moveDir === -1 && player.x > 0) player.x -= 8;
+            if (moveDir === 1 && player.x < canvas.width - player.width) player.x += 8;
+
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].y += speed;
+
+                // Çarpışma Kontrolü
+                if (
+                    player.x < obstacles[i].x + obstacles[i].width &&
+                    player.x + player.width > obstacles[i].x &&
+                    player.y < obstacles[i].y + obstacles[i].height &&
+                    player.y + player.height > obstacles[i].y
+                ) {
+                    gameActive = false;
+                    if(confirm("Kaza Yaptın! Skor: " + score + "\nTekrar oynamak ister misin?")) {
+                        location.reload();
+                    }
+                }
+
+                if (obstacles[i].y > canvas.height) {
+                    obstacles.splice(i, 1);
+                    score++;
+                    ui.innerText = "Puan: " + score;
+                    if (score % 5 === 0) speed += 0.3;
+                }
+            }
+
+            createObstacle();
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Yol Çizgileri
+            ctx.setLineDash([30, 30]);
+            ctx.strokeStyle = "rgba(255,255,255,0.3)";
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+
+            // Oyuncu (Araba tasarımı)
+            ctx.fillStyle = player.color;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = "red";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Farlar
+            ctx.fillStyle = "yellow";
+            ctx.fillRect(player.x + 5, player.y - 5, 10, 5);
+            ctx.fillRect(player.x + player.width - 15, player.y - 5, 10, 5);
+
+            // Engeller
+            ctx.shadowBlur = 0;
+            for (let obs of obstacles) {
+                ctx.fillStyle = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            }
+        }
+
+        update();
+    </script>
+</body>
+</html>
